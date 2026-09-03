@@ -371,8 +371,9 @@ spin-up 和敏感性试验。
 
 本文对应：
 
-- 仓库：`weiguang1233/RegCM-cndv`；
+- 独立仓库：`weiguang1233/RegCM5-cndv`；
 - 本地分支：`feature/regcm5-cndv`；
+- CNDV 实现提交：`bf83f3d28998b33b0d4a6229423c2f0dad4e35da`；
 - 基线提交：`ae3fc8b6484b`；
 - 编译器验证：GNU Fortran/GCC 15.2、OpenMPI 5.0、NetCDF-C 4.9、
   NetCDF-Fortran 4.6；

@@ -11,10 +11,10 @@
 2. 当前安装后的 CNDV 程序使用 `CN` 后缀，例如 `regcmMPICN`。这只是现有
    `makeinc` 的命名结果；构建参数中实际同时包含 `-DCLM45 -DCN -DCNDV`。
 
-本文命令均假定源码位于：
+本文命令中的 `/path/to/RegCM5-cndv` 表示克隆后的源码目录，例如：
 
 ```text
-/home/lwg/Desktop/update_regcm-cndv/RegCM-cndv
+/home/user/RegCM5-cndv
 ```
 
 如果放在其他目录，只需替换示例路径。
@@ -65,10 +65,17 @@ MPIFC=/usr/bin/mpifort
 
 ## 3. 获取分支
 
-已有本地仓库时：
+首次获取独立仓库时：
 
 ```bash
-cd /home/lwg/Desktop/update_regcm-cndv/RegCM-cndv
+git clone https://github.com/weiguang1233/RegCM5-cndv.git
+cd RegCM5-cndv
+git switch master
+```
+
+`master` 是已集成 CNDV 的默认分支。若要沿用开发分支名称，可以改为：
+
+```bash
 git switch feature/regcm5-cndv
 ```
 
@@ -89,7 +96,7 @@ git status --short
 Git checkout 通常需要先生成 `configure` 和各级 `Makefile.in`：
 
 ```bash
-cd /home/lwg/Desktop/update_regcm-cndv/RegCM-cndv
+cd /path/to/RegCM5-cndv
 ./bootstrap.sh
 ```
 
@@ -98,7 +105,7 @@ cd /home/lwg/Desktop/update_regcm-cndv/RegCM-cndv
 ### 4.2 配置 CNDV
 
 ```bash
-cd /home/lwg/Desktop/update_regcm-cndv/RegCM-cndv
+cd /path/to/RegCM5-cndv
 env PATH=/usr/bin:/bin \
   CC=/usr/bin/gcc \
   FC=/usr/bin/gfortran \
@@ -215,7 +222,7 @@ REGCM_DATA/
 建议把源码、全局输入、区域中间文件和结果分开：
 
 ```bash
-export REGCM_SRC=/home/lwg/Desktop/update_regcm-cndv/RegCM-cndv
+export REGCM_SRC=/path/to/RegCM5-cndv
 export REGCM_PREFIX="$REGCM_SRC/install-cndv"
 export REGCM_DATA=/path/to/RegCM_Data
 export REGCM_RUN=/path/to/run-cndv
