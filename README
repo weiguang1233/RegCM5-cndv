@@ -31,3 +31,12 @@ ICTP Regional Climate Model
 
 [![DOI](https://zenodo.org/badge/181515678.svg)]
 (https://zenodo.org/badge/latestdoi/181515678)
+
+CNDV documentation
+------------------
+
+Chinese documentation for the RegCM5 CLM4.5-CN-DV implementation is
+available here:
+
+* [Implementation changes, scientific basis, and scope](Doc/CNDV_IMPLEMENTATION_ZH.md)
+* [Build, installation, preprocessing, run, and restart guide](Doc/CNDV_BUILD_AND_RUN_ZH.md)

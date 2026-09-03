@@ -207,6 +207,24 @@ This option switches off the default Land model of RegCM (derived from BATS1e),
 and enables the use of the Community Land Model V4.5 inside RegCM. The default
 is to use the RegCM BATS Land Model, but ICTP is strongly suggesting this as
 the default surface model option to be used on CORDEX projects,
+\item CLM 4.5 carbon--nitrogen dynamic vegetation option
+\begin{Verbatim}
+  --enable-clm45 --enable-cndv
+\end{Verbatim}
+The CNDV option enables both the CLM carbon--nitrogen model and prognostic
+dynamic vegetation. It requires CLM4.5 and must not be combined with the
+DYNPFT source option. In CLM4.5, the natural vegetation patch count is derived
+internally from the number of plant functional types, so the
+\verb=MAXPATCH_PFT= preprocessor definition used by older CLM versions must
+not be added manually. This implementation includes the RefinedCN and
+ModifiedDV changes described by Wang et al. (2016,
+\verb=doi:10.1007/s00382-015-2596-z=): stress-deciduous phenology uses the
+driest/wettest of the top three soil layers for leaf onset/senescence and a
+30-day stress-deciduous leaf-dropping period, while tropical broadleaf
+evergreen trees are excluded when the recursively updated, 20-year-weighted
+mean drought duration exceeds 45 days. Detailed implementation and usage
+notes are in \verb=Doc/CNDV_IMPLEMENTATION_ZH.md= and
+\verb=Doc/CNDV_BUILD_AND_RUN_ZH.md=.
 \item OASIS option
 \begin{verbatim}
   --enable-oasis     Supply this option if you plan on using OASIS

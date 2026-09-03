@@ -1,5 +1,7 @@
 module mod_clm_cndecompcascadebgc
+#if !defined(CN) || defined(CENTURY_DECOMP)
 implicit none
+#endif
 #ifdef CN
 
 #ifndef CENTURY_DECOMP

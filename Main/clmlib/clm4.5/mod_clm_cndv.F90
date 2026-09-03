@@ -26,8 +26,7 @@ module mod_clm_cndv
          gcomm_gridcell, gcomm_landunit, gcomm_column, gcomm_pft, ldecomp
   use mod_clm_varpar, only : maxpatch_pft
   use mod_clm_domain, only : ldomain
-  use mod_clm_varcon, only : spval
-  use mod_clm_varcon , only : secspday
+  use mod_clm_varcon, only : spval, secspday, istsoil
 
   implicit none
 
@@ -43,9 +42,11 @@ module mod_clm_cndv
   !
   ! Drives the annual dynamic vegetation that works with CN
   !
-  subroutine dv(lbg, ubg, lbp, ubp, num_natvegp, filter_natvegp, kyr)
+  subroutine dv(lbg, ubg, lbc, ubc, lbp, ubp, &
+                num_natvegp, filter_natvegp, kyr)
     implicit none
     integer(ik4), intent(in) :: lbg, ubg  ! gridcell bounds
+    integer(ik4), intent(in) :: lbc, ubc  ! column bounds
     integer(ik4), intent(in) :: lbp, ubp  ! pft bounds
     ! number of naturally-vegetated pfts in filter
     integer(ik4), intent(inout) :: num_natvegp
@@ -54,6 +55,9 @@ module mod_clm_cndv
     integer(ik4), intent(in) :: kyr   ! used in routine climate20 below
     integer(ik4), pointer, contiguous :: mxy(:)  ! pft m index (for laixy(i,j,m),etc.)
     integer(ik4), pointer, contiguous :: pgridcell(:)   ! gridcell of corresponding pft
+    integer(ik4), pointer, contiguous :: clandunit(:)   ! landunit of corresponding column
+    integer(ik4), pointer, contiguous :: ltype(:)       ! landunit type
+    logical, pointer, contiguous :: cactive(:)          ! true => column is active
     ! foliar projective cover on gridcell (fraction)
     real(rk8), pointer, contiguous :: fpcgrid(:)
     ! accumulated growing degree days above 5
@@ -65,13 +69,24 @@ module mod_clm_cndv
     real(rk8), pointer, contiguous :: temp_count(:)
     real(rk8), pointer, contiguous :: tmomin20(:) ! 20-yr running mean of tmomin
     real(rk8), pointer, contiguous :: agdd20(:)   ! 20-yr running mean of agdd
-    integer(ik4) :: g, p             ! indices
+    ! annual drought duration and its 20-year running mean (days)
+    real(rk8), pointer, contiguous :: drought_days(:)
+    real(rk8), pointer, contiguous :: drought_days20(:)
+    integer(ik4) :: g, l, c, p       ! indices
     integer(ik4) :: ier
 
     ! Assign local pointers to derived type members (gridcell-level)
 
     agdd20    => clm3%g%gdgvs%agdd20
     tmomin20  => clm3%g%gdgvs%tmomin20
+
+    ! Assign local pointers to derived type members (landunit/column-level)
+
+    ltype          => clm3%g%l%itype
+    clandunit      => clm3%g%l%c%landunit
+    cactive        => clm3%g%l%c%active
+    drought_days   => clm3%g%l%c%cps%drought_days
+    drought_days20 => clm3%g%l%c%cps%drought_days20
 
     ! Assign local pointers to derived type members (pft-level)
 
@@ -122,6 +137,22 @@ module mod_clm_cndv
     end if
 
     deallocate(temp_tmomin,temp_agdd,temp_count)
+
+    ! Use the same recursive 20-year averaging convention as tmomin20 and
+    ! agdd20 above.  A negative mean is the first-valid-year sentinel, so a
+    ! value restored from restart is never overwritten based on kyr alone.
+    do c = lbc, ubc
+      l = clandunit(c)
+      if (cactive(c) .and. ltype(l) == istsoil) then
+        if (drought_days20(c) < 0._rk8) then
+          drought_days20(c) = drought_days(c)
+        else
+          drought_days20(c) = (19._rk8*drought_days20(c) + &
+                               drought_days(c))/20._rk8
+        end if
+        drought_days(c) = 0._rk8
+      end if
+    end do
 
     ! Rebuild filter of present natually-vegetated pfts after Kill()
 

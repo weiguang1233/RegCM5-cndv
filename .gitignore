@@ -260,3 +260,6 @@ version
 Makefile
 Makefile.in
 ipo_out.optrpt
+
+# Local CNDV installation prefix used by the documented build command.
+/install-cndv/

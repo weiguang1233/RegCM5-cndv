@@ -1614,6 +1614,10 @@ module mod_clm_typeinit
 !   allocate(cps%xirrig(ibeg:iend))
     allocate(cps%max_dayl(ibeg:iend))
     allocate(cps%soilpsi(ibeg:iend,nlevgrnd), source=spval)
+#if (defined CNDV)
+    allocate(cps%drought_days(ibeg:iend), source=0._rk8)
+    allocate(cps%drought_days20(ibeg:iend), source=-1._rk8)
+#endif
     allocate(cps%decl(ibeg:iend), source=nan_r8)
     allocate(cps%coszen(ibeg:iend), source=nan_r8)
     allocate(cps%bd(ibeg:iend,nlevgrnd), source=spval)
