@@ -671,9 +671,9 @@ module mod_pbl_holtbl
       !   predicted field
       !
       do concurrent ( j = jdii1:jdii2, i = idii1:idii2, k = 1:kz )
-        p2m%uten(j,i,k) = p2m%uten(j,i,k) + &
+        p2m%utend(j,i,k) = p2m%utend(j,i,k) + &
                           (tpred1(j,i,k)-m2p%udatm(j,i,k))*rdt*m2p%psdotb(j,i)
-        p2m%vten(j,i,k) = p2m%vten(j,i,k) + &
+        p2m%vtend(j,i,k) = p2m%vtend(j,i,k) + &
                           (tpred2(j,i,k)-m2p%vdatm(j,i,k))*rdt*m2p%psdotb(j,i)
       end do
     end if
