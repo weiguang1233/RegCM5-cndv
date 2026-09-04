@@ -8,8 +8,11 @@
 
 1. CNDV 是编译期功能。必须用 `--enable-clm45 --enable-cndv` 构建，并运行这次
    构建产生的程序；namelist 中不存在 `enable_cndv=.true.` 一类开关。
-2. 当前安装后的 CNDV 程序使用 `CN` 后缀，例如 `regcmMPICN`。这只是现有
-   `makeinc` 的命名结果；构建参数中实际同时包含 `-DCLM45 -DCN -DCNDV`。
+2. 程序后缀会受 Make/配置环境影响。本机 GNU Make 4.4 的已验证安装使用
+   `CN`（如 `regcmMPICN`），`huan` 服务器 GNU Make 3.82 的本次安装使用
+   `CN_CNDV_CLM45`（如 `regcmMPICN_CNDV_CLM45`）。两者编译参数都同时包含
+   `-DCLM45 -DCN -DCNDV`。任何脚本都应先查看目标安装前缀的 `bin/`，以实际
+   文件名为准，不能根据旧文档猜测。
 
 本文命令中的 `/path/to/RegCM5-cndv` 表示克隆后的源码目录，例如：
 
@@ -169,23 +172,118 @@ ldd install-cndv/bin/regcmMPICN
 程序能够初始化、打印版本/用法并因缺少 namelist 正常退出，即说明可执行文件和
 基本动态库链路可用。这不是数值模拟测试。
 
+### 4.5 `huan` 集群上的原生构建
+
+本次服务器部署没有上传本机可执行文件，而是先上传提交
+`ef6e753e28e86b8b1a30209184b1c8b0662ec098` 对应的干净源码包，再加入服务器
+测试发现并已提交为 `1d8155c7c` 的 Holtslag 两行修复，最后用服务器 Intel
+编译器、Intel MPI 和服务器 NetCDF/HDF5 原生重编译。本机二进制依赖的
+GNU/OpenMPI/glibc ABI 与 CentOS 7 集群不同，不能直接复用。
+
+服务器目录约定为：
+
+```text
+/public/home/elpt_2024_000795/packages/RegCM/RegCM5-cndv/
+├── RegCM5-cndv-ef6e753e2.tar.gz   # 上传的可追溯源码包
+├── source/                        # 构建源码树
+├── install/                       # 安装前缀
+└── logs/                          # bootstrap/configure/make/install 日志
+```
+
+登录后加载的模块栈为：
+
+```bash
+module purge
+module load compiler/intel/2021.3.0
+module load mpi/intelmpi/2021.3.0
+module load mathlib/hdf5/intel/1.8.20
+module load mathlib/netcdf/intel/4.4.1
+module load mathlib/zlib/intel/1.2.11
+hash -r
+```
+
+该组合使用 serial NetCDF 4.4.1；RegCM 主程序仍由 Intel MPI 并行。服务器现有
+PnetCDF 是用另一代 Intel MPI（2017）构建的，与本次 Intel MPI 2021.3 ABI 不
+一致，因此本次配置明确不使用 `--enable-pnetcdf` 或任何 parallel NetCDF
+选项。除非重新用同一编译器/MPI 栈构建全部依赖，不要混用该 PnetCDF。
+
+在服务器上验证成功的配置、编译和安装命令如下：
+
+```bash
+set -euo pipefail
+export LANG=C
+export LC_ALL=C
+
+ROOT=/public/home/elpt_2024_000795/packages/RegCM/RegCM5-cndv
+cd "$ROOT/source"
+
+# `git archive` 不含 .git；在这种源码包中显式记录用于构建的代码提交。
+printf '%s\n' '1d8155c7c54ee775a6169f8ba8f581794c954ee8' > version
+
+./bootstrap.sh 2>&1 | tee "$ROOT/logs/bootstrap.log"
+
+CC=icc FC=ifort MPIFC=mpiifort \
+  ./configure \
+    --prefix="$ROOT/install" \
+    --enable-clm45 \
+    --enable-cndv \
+    --with-netcdf=/public/software/mathlib/libs-intel/netcdf/4.4.1 \
+    --with-hdf5=/public/software/mathlib/libs-intel/hdf5/1.8.20 \
+  2>&1 | tee "$ROOT/logs/configure.log"
+
+make version 2>&1 | tee "$ROOT/logs/make-version.log"
+make -j4 2>&1 | tee "$ROOT/logs/make.log"
+make install 2>&1 | tee "$ROOT/logs/install.log"
+```
+
+这里必须在 `source/` 中进行 **in-source build**。当前 RegCM5 生成的 Makefile
+对 VPATH/out-of-tree 构建支持不完整，服务器实测会找不到 `build/makeinc`，修补
+这一处后又会找不到 `external/mo_simple_plumes.f90`。这些失败日志已保留为
+`logs/configure-vpath.log`、`logs/make-attempt1.log` 和
+`logs/make-vpath-attempt2.log`；它们不是 CNDV 源码编译错误。
+
+安装完成后不要假定程序后缀，先检查实际目录：
+
+```bash
+BIN="$ROOT/install/bin"
+find "$BIN" -maxdepth 1 -type f -printf '%f\n' | sort
+grep '^AM_CPPFLAGS' "$ROOT/source/Main/clmlib/clm4.5/Makefile"
+ldd "$BIN/regcmMPICN_CNDV_CLM45" | grep 'not found' && exit 1 || true
+```
+
+本次安装确认前处理程序和主程序均使用完整后缀 `CN_CNDV_CLM45`，且编译命令
+包含 `-DCLM45 -DCN -DCNDV`。上述路径是当前部署记录；以后更换提交、配置或
+安装前缀时仍应重新查看 `bin/`，并同步修改作业脚本。
+
+修复提交加入后，服务器把 `source/version` 更新为完整代码提交
+`1d8155c7c54ee775a6169f8ba8f581794c954ee8`，增量 `make -j4` 和
+`make install` 均返回 0。最终主程序启动横幅和二进制字符串都含该完整提交，
+SHA256 为：
+
+```text
+fcece9e28f56700bad73a0e532c4e3a0c336430ef8d15d868d2c5e848be66e60
+```
+
+再次执行 `ldd` 仍无 `not found`。因此最终测试所用二进制的自报版本、源码修复
+和安装文件相互一致。
+
 ## 5. 安装后的程序名
 
-当前安装前缀中的主要 CNDV 程序为：
+本机已验证安装中的主要 CNDV 程序如下；`huan` 服务器对应名称在右列：
 
-| 程序 | 用途 |
-| --- | --- |
-| `terrainCN` | 生成区域网格和地表基础文件 |
-| `mksurfdataCN` | 生成 CLM4.5 区域 surface 数据 |
-| `sstCN` | 生成 SST 边界数据 |
-| `icbcCN` | 生成大气初始和侧边界数据 |
-| `regcmMPICN` | 正常的大气—CLM4.5—CN—DV 耦合模式 |
-| `interpinicCN` | 在网格/地表权重变化时插值已有 CLM 初始或 restart 状态 |
-| `clmbcCN` | 为独立 CLM 模式准备逐小时 ERA5 地表强迫 |
-| `clmsaMPICN` | 不运行 RegCM 大气的独立 CLM 模式 |
+| 本机 GNU Make 4.4 | `huan` 本次安装 | 用途 |
+| --- | --- | --- |
+| `terrainCN` | `terrainCN_CNDV_CLM45` | 生成区域网格和地表基础文件 |
+| `mksurfdataCN` | `mksurfdataCN_CNDV_CLM45` | 生成 CLM4.5 区域 surface 数据 |
+| `sstCN` | `sstCN_CNDV_CLM45` | 生成 SST 边界数据 |
+| `icbcCN` | `icbcCN_CNDV_CLM45` | 生成大气初始和侧边界数据 |
+| `regcmMPICN` | `regcmMPICN_CNDV_CLM45` | 大气—CLM4.5—CN—DV 耦合模式 |
+| `interpinicCN` | `interpinicCN_CNDV_CLM45` | 插值已有 CLM 初始或 restart 状态 |
+| `clmbcCN` | `clmbcCN_CNDV_CLM45` | 为独立 CLM 准备 ERA5 地表强迫 |
+| `clmsaMPICN` | `clmsaMPICN_CNDV_CLM45` | 不运行 RegCM 大气的独立 CLM 模式 |
 
-旧手册中可能出现 `*CLM45` 名称；本分支应以 `install-cndv/bin` 中的实际文件名
-为准。源码树中尚未安装的程序可能仍使用无后缀名称，例如 `Main/regcm`。
+源码树中尚未安装的程序可能仍使用无后缀名称，例如 `Main/regcm`。若 `find`
+结果与表中任一列不同，应以 `bin/` 实际文件为准，同时用编译宏检查确认功能。
 
 ## 6. 准备输入数据
 
@@ -378,6 +476,129 @@ MPI 进程数必须适合区域分解；可通过 RegCM 的 `njxcpus/niycpus` �
   小时 ERA5 场生成 `*_SFBC.*.nc`，随后由 `clmsaMPICN` 读取。正常
   `regcmMPICN` 耦合模拟不运行 `clmbcCN`。
 
+### 8.2 `huan` 集群独立 smoke 测试
+
+服务器 smoke 测试使用独立目录，不修改已有的 `regcm5_run`：
+
+```text
+/public/home/elpt_2024_000795/workdir_for_RCM/cndv_smoke_regcm5_ef6e753e2/
+├── cndv_smoke.in
+├── preprocess.slurm
+├── run.slurm
+├── input/
+├── output/
+└── logs/
+```
+
+这样可把本次提交、输入和输出与既有试验隔离，也不会误用其他 RegCM 版本的
+软链接或区域文件。测试配置为：
+
+| 项目 | 值 |
+| --- | --- |
+| domain | `c5smoke`，LAMCON，中心 `45.39°N, 13.48°E` |
+| 网格 | `iy=34, jx=64, kz=18, nsg=1`，水平分辨率 60 km |
+| 大气/SST | `EIN15` / `ERSST` |
+| 全局数据根 | `/public/home/elpt_2024_000795/data/INPUT/RCMdata` |
+| 前处理时间窗 | 1990-06-01 00 至 1990-06-03 00 |
+| 模式积分 | 1990-06-01 00 至 1990-06-02 00，共 24 小时 |
+| 时间步 | 大气 `dt=150 s`，陆面 `dtsrf=600 s` |
+| PBL | `ibltyp=1`，Holtslag |
+| CLM history | `hist_nhtfrq=-24`，即每 24 小时一条 |
+
+namelist 中必须保留：
+
+```fortran
+&clm_inparm
+  fpftcon = 'pft-physiology.c130503.nc',
+  fsnowoptics = 'snicar_optics_5bnd_c090915.nc',
+  fsnowaging = 'snicar_drdt_bst_fit_60_c070416.nc',
+  create_crop_landunit = .false.,
+  hist_nhtfrq = -24,
+  hist_fincl1 = 'DROUGHT_DAYS:I', 'DROUGHT_DAYS20:I',
+/
+```
+
+`create_crop_landunit=.false.` 不是可选的性能设置；CNDV 会在启动时检查它，值为
+`.true.` 时主动终止。`dtsrf=600 s` 时，一天是 144 个陆面步，和
+`hist_nhtfrq=-24` 的日输出设置一致。
+
+不要在登录节点直接运行多 rank 模式。加载第 4.5 节模块后，先提交单进程前
+处理作业，再让四进程模式作业依赖前处理成功状态：
+
+```bash
+cd /public/home/elpt_2024_000795/workdir_for_RCM/cndv_smoke_regcm5_ef6e753e2
+pre_job=$(sbatch --parsable preprocess.slurm)
+run_job=$(sbatch --parsable --dependency=afterok:"$pre_job" run.slurm)
+printf 'preprocess=%s model=%s\n' "$pre_job" "$run_job"
+squeue -j "$pre_job,$run_job"
+```
+
+两个脚本均使用 `debug` 分区、单节点和 `OMP_NUM_THREADS=1`；前处理请求 1 个
+task/30 分钟，模式请求 4 个 task/1 小时。核心命令为：
+
+```bash
+BIN=/public/home/elpt_2024_000795/packages/RegCM/RegCM5-cndv/install/bin
+NML=cndv_smoke.in
+
+"$BIN/terrainCN_CNDV_CLM45" "$NML"
+"$BIN/mksurfdataCN_CNDV_CLM45" "$NML"
+"$BIN/sstCN_CNDV_CLM45" "$NML"
+"$BIN/icbcCN_CNDV_CLM45" "$NML"
+mpirun -n 4 "$BIN/regcmMPICN_CNDV_CLM45" "$NML"
+```
+
+前处理验收至少要求以下文件存在、非空且 `ncdump -h` 能正常读取：
+
+```text
+input/c5smoke_DOMAIN000.nc
+input/c5smoke_LANDUSE
+input/c5smoke_TEXTURE
+input/c5smoke_CLM45_surface.nc
+input/c5smoke_SST.nc
+input/c5smoke_ICBC.1990060100.nc
+```
+
+模式积分预期产生 `ATM/RAD/SRF/STS`、终点 `SAV`、CLM restart/history-restart
+以及 CNDV `hv` 文件。推荐按下面顺序验收，而不能只根据“文件已创建”判断成功：
+
+```bash
+sacct -X -j "$run_job" \
+  --format=JobID,JobName,Partition,State,ExitCode,Elapsed
+grep -E 'MODEL_RUN_OK|simulation successfully reached end' "logs/run.${run_job}.out"
+! grep -aEi 'fatal|segmentation fault|forrtl: severe|mpi_abort|(^|[^[:alpha:]])nan([^[:alpha:]]|$)' \
+  "logs/run.${run_job}.out" "logs/run.${run_job}.err"
+
+for file in input/*.nc output/*.nc; do
+  test -s "$file"
+  ncdump -h "$file" >/dev/null
+done
+
+ncdump -h output/c5smoke.clm.regcm.hv.1991.nc | grep -E 'FPCGRID|NIND'
+ncdump -h output/c5smoke.clm.regcm.r.1990060200.nc \
+  | grep -E 'drought_days|drought_days20'
+```
+
+验收还应确认 Slurm 状态为 `COMPLETED`、退出码为 `0:0`，日志包含 CNDV 初始化/
+history 消息，并且所有 MPI rank 均未异常退出。这个 24 小时测试不跨年，只验证
+构建、前处理、耦合启动、持续积分和落盘链路；年度 CNDV 竞争、死亡、建立和
+20 年递推量仍必须另做跨年及 restart 测试。
+
+本次服务器前处理作业 `39201799` 状态为 `COMPLETED`、退出码 `0:0`，并生成了
+上述区域输入。修复第 12 节所述 Holtslag 接口回归并刷新二进制版本标识后，
+最终耦合作业 `39224268`
+使用 4 个 MPI rank，在 26 秒墙钟时间内完成 24 小时积分，状态为 `COMPLETED`、
+退出码 `0:0`。日志包含 `Writing initial CNDV FPCGRID`、
+`RegCM V5 simulation successfully reached end`、`MODEL_RUN_OK`，并明确显示
+`GIT Revision: 1d8155c7c54ee775a6169f8ba8f581794c954ee8`。
+
+验收逐个读取了 8 个模式 NetCDF 输出：ATM、RAD、SRF、STS、终点 SAV、CLM
+restart、CLM history-restart 和 CNDV `hv` 均通过 `ncdump -h`。其中 restart 含
+`drought_days/drought_days20`，history-restart 含
+`DROUGHT_DAYS/DROUGHT_DAYS20`，`hv` 含 `FPCGRID/NIND`；最终作业日志未检出
+FATAL、段错误、MPI abort 或独立 NaN 标记。早期两个失败作业及其部分输出已按
+作业号放在运行目录的 `attempts/` 下；版本标识刷新前已成功的 `39202048` 输出
+也保存在 `attempts/run_39202048_pre_version_refresh/`，均与当前最终输出隔离。
+
 ## 9. 如何确认 CNDV 正在工作
 
 CNDV 没有运行时开关，因此确认应从构建、日志和输出三方面进行。
@@ -386,7 +607,8 @@ CNDV 没有运行时开关，因此确认应从构建、日志和输出三方面
 
 - 配置参数含 `--enable-clm45 --enable-cndv`；
 - `Main/clmlib/clm4.5/Makefile` 的预处理宏含 `CLM45/CN/CNDV`；
-- 实际运行的是同一安装前缀中的 `regcmMPICN`。
+- 实际运行的是同一安装前缀中由 `find` 核实过的 CNDV 主程序（本机示例为
+  `regcmMPICN`，本次服务器安装为 `regcmMPICN_CNDV_CLM45`）。
 
 ### 9.2 日志检查
 
@@ -513,6 +735,15 @@ create_crop_landunit = .false.,
 
 模板未写该项并不代表其默认值适合 CNDV。
 
+### 默认 Holtslag 在首个 PBL 步段错误
+
+若回溯落在 `mod_pbl_holtbl.F90` 原 674/676 行，并且使用默认
+`idynamic=1, ibltyp=1`，应确认源码已经包含
+`p2m%utend/p2m%vtend` 两个写入目标。RegCM5 上游 cross-point 重构曾遗漏这两
+行，使 Holtslag 写入未分配的临时指针。本分支提交 `1d8155c7c` 已修复；详细
+依据见实现说明第 4.6 节。不要只把 `ibltyp` 改成其他方案来掩盖问题，也不要把
+这一工程修复解释为 CNDV 参数化改变。
+
 ### 找不到 `mpifort` 或出现 `x86_64-conda-linux-gnu-*` 错误
 
 误用了 Conda 包装器。使用本文给出的 `PATH=/usr/bin:/bin` 和显式
@@ -558,7 +789,7 @@ hist_fincl1 = 'DROUGHT_DAYS:I', 'DROUGHT_DAYS20:I',
 - [ ] 当前分支和完整提交哈希已记录；
 - [ ] 配置含 `--enable-clm45 --enable-cndv`；
 - [ ] 编译宏含 `CLM45/CN/CNDV`；
-- [ ] `ldd regcmMPICN` 无缺失库；
+- [ ] 对实际 CNDV 主程序执行 `ldd`，无缺失库；
 - [ ] `create_crop_landunit=.false.`；
 - [ ] `nsg=1`；
 - [ ] CLM45 `pftdata/snicardata/surface` 文件完整；

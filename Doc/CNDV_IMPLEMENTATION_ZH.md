@@ -236,6 +236,28 @@ excess_p = (fpc_shrub_total - fpc_shrub_max)
 这样 `excess_p` 与 FPC 量纲一致，且全部 shrub PFT 调整后的总量恰好回到允许
 上限。
 
+#### RegCM5 Holtslag PBL 接口回归
+
+[mod_pbl_holtbl.F90](../Main/pbllib/mod_pbl_holtbl.F90) 有一项服务器积分时发现的
+两行工程修复。它不属于 CNDV、CN 或 Wang et al. 的科学参数化。
+
+RegCM5 上游提交 `a6e3ac9763` 将非 MOLOCH 动力核心的其他 PBL 方案改为先在
+cross point 上计算风趋势，再转换到 dot point。接口因此把
+`p2m%uten/p2m%vten` 指向仅为 `ibltyp>1` 分配的 cross-point 临时数组，并新增
+`p2m%utend/p2m%vtend` 指向真实的 `aten%u/aten%v` dot-point 趋势。但是默认
+Holtslag（`ibltyp=1`）的非 MOLOCH 分支仍写旧成员。此时临时数组未分配，四个
+MPI rank 均会在第一个 PBL 时间步访问空指针。
+
+该分支本来就在 dot point 上计算，因此修复仅把两个写入目标由
+`p2m%uten/p2m%vten` 改为 `p2m%utend/p2m%vtend`。不能通过为 Holtslag 额外分配
+cross-point 临时数组来替代：`ibltyp=1` 没有后续 `uvcross2dot`，那样虽可能不再
+崩溃，结果却不会进入真实模式趋势。
+
+证据链包括：崩溃回溯准确落在原写入行；故障地址接近零；默认
+`idynamic=1, ibltyp=1` 正好满足空指针路径；同一作业在两行修复后完成 24 小时
+积分。RegCM4.7 使用旧接口，直接把 `p2m%uten/p2m%vten` 关联到真实趋势数组，
+因此不需要也不得机械移植这项修复。
+
 ### 4.7 文档和本地安装目录
 
 - [Doc/UserGuide/Install.tex](UserGuide/Install.tex) 增加 CNDV 配置入口和约束的
@@ -280,6 +302,7 @@ RegCM4.3.4 结果做 bit-for-bit 复现。
 | `mod_clm_histflds.F90` | 可选 history 诊断字段 |
 | `mod_clm_cnsetvalue.F90` | 特殊 column 的统一赋值 |
 | `mod_clm_cndecompcascadebgc.F90` | CN 预处理后的 Fortran 语句顺序 |
+| `Main/pbllib/mod_pbl_holtbl.F90` | RegCM5 上游 Holtslag PBL 空指针回归修复（非 CNDV 算法） |
 | `Doc/UserGuide/Install.tex`、`.gitignore` | 简要安装说明和本地前缀隔离 |
 
 表中的 `mod_clm_*.F90` 均位于 `Main/clmlib/clm4.5/`。
@@ -296,7 +319,8 @@ RegCM4.3.4 结果做 bit-for-bit 复现。
 
 ### 7.2 没有改动这些模型部分
 
-- RegCM 大气动力框架、辐射、积云、PBL、海洋和大气—陆面耦合接口；
+- 除第 4.6 节所述 Holtslag 两行空指针回归修复外，没有改变 RegCM 大气动力
+  框架、辐射、积云、PBL 科学公式、海洋或大气—陆面耦合算法；
 - 常规 CN 的碳氮分配、分解、火灾、背景死亡和 gap mortality 科学公式；
 - 植物水力学、根系适应、液流、水力死亡或物种演化机制；
 - 地形、SST、ICBC 和 CLM4.5 surface 数据的插值算法；
@@ -348,11 +372,30 @@ FLUXNET 等观测对比。因而目前不能宣称：
 模拟。这一限制不表示 OpenMPI 安装损坏；正式多 rank 测试应在正常宿主机或计算
 节点上进行。
 
+在 `huan` 集群的 CentOS 7/Intel 2021.3/Intel MPI 环境中还完成了：
+
+- 从源码原生配置、编译和安装，编译命令确认含 `-DCLM45 -DCN -DCNDV`；
+- `ldd` 检查安装主程序的全部动态库均可解析；
+- 1-task 小域 `terrain → mksurfdata → sst → icbc` 前处理，Slurm 作业
+  `39201799` 为 `COMPLETED (0:0)`；
+- 4-rank、24 小时耦合积分，修复 Holtslag 回归并刷新版本标识后的最终作业
+  `39224268` 为 `COMPLETED (0:0)`，并明确到达最终时间；
+- 最终主程序启动横幅显示完整修复提交
+  `1d8155c7c54ee775a6169f8ba8f581794c954ee8`，其 SHA256 为
+  `fcece9e28f56700bad73a0e532c4e3a0c336430ef8d15d868d2c5e848be66e60`；
+- 逐个读取 8 个模式 NetCDF 输出；restart 中确认两个小写干旱状态，
+  history-restart 中确认两个大写诊断，CNDV 年度文件中确认 `FPCGRID/NIND`；
+- 最终日志中未检出 FATAL、段错误、MPI abort 或独立 NaN 标记。
+
+这证明了当前服务器工具链上的安装、前处理、CNDV 初始化、24 小时持续耦合和
+I/O 链路。它仍不等于跨年动态植被更新、restart 数值等价性、长期 spin-up 或
+论文结果复现。
+
 ## 9. 科学使用前仍需完成的验证
 
 建议按以下顺序推进：
 
-1. 用短域完成 `terrain → mksurfdata → sst → icbc → regcm` 端到端测试；
+1. 在目标正式工具链/区域复核已通过的小域端到端流程；
 2. 跨年运行，确认 `DROUGHT_DAYS` 年内递增、年末归零，`DROUGHT_DAYS20`
    按公式更新；
 3. 做同一日期的连续运行与 restart 分段运行对比；
@@ -374,10 +417,12 @@ spin-up 和敏感性试验。
 - 独立仓库：`weiguang1233/RegCM5-cndv`；
 - 本地分支：`feature/regcm5-cndv`；
 - CNDV 实现提交：`bf83f3d28998b33b0d4a6229423c2f0dad4e35da`；
+- Holtslag 上游回归修复提交：`1d8155c7c`；
 - 基线提交：`ae3fc8b6484b`；
 - 编译器验证：GNU Fortran/GCC 15.2、OpenMPI 5.0、NetCDF-C 4.9、
   NetCDF-Fortran 4.6；
-- 文档日期：2026-09-04。
+- 服务器验证：Intel classic/Intel MPI 2021.3、NetCDF 4.4.1、HDF5 1.8.20；
+- 文档日期：2026-09-05。
 
 本次实现已在本地功能分支提交；任何科学试验仍应记录完整提交哈希、namelist、
 输入数据版本、编译器版本和 restart 来源。
