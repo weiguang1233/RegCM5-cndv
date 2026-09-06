@@ -802,3 +802,22 @@ hist_fincl1 = 'DROUGHT_DAYS:I', 'DROUGHT_DAYS20:I',
 - [ ] spin-up 和科学验证方案已单独记录。
 
 完成这些工程检查后，才适合进入多年 spin-up、敏感性试验和论文结果复现。
+
+## 14. 已完成的整年与重启回归测试
+
+本仓库保存了一组在服务器上实际完成的 RegCM5-CNDV 两整年连续测试，用于验证
+年度 CNDV 调用、SAV/CLM restart 接续、PFT 年度目标写出以及新增干旱状态的保存与
+恢复。配置与分析程序见
+[`Testing/CNDV/regcm5_1990_1992`](../Testing/CNDV/regcm5_1990_1992/)。
+
+- [1990—1991 首年测试报告](CNDV_FIRST_YEAR_TEST_REPORT_ZH.md)：冷启动整年，
+  8 MPI；
+- [1990—1992 两年比较报告](CNDV_TWO_YEAR_TEST_REPORT_ZH.md)：从首年末完整
+  restart 接续第二整年，32 MPI，并比较两次年度 PFT 更新。
+
+这组测试的工程验收通过：两个年份均完整结束，年度 CNDV 各调用一次，三份 HV 的
+映射和覆盖度闭合正确，最终 HV 与 restart 的 FPC/NIND 逐槽一致，年度
+`drought_days20` 递推也与代码公式一致。但它不是科学验收：首年冷启动后自然 PFT
+目标覆盖由 61.54% 降至 0.45%，第二年只出现草本驱动的 0.14 个百分点净回升；
+欧洲域的 PFT4 始终为零，并且初始作物 PFT15 不适合当前 CNDV 路径。正式科研使用
+前仍需完成一致的 spin-up、作物边界处理、无 CNDV 对照和含 PFT4 的热带多年试验。
