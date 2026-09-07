@@ -42,3 +42,4 @@ available here:
 * [Build, installation, preprocessing, run, and restart guide](Doc/CNDV_BUILD_AND_RUN_ZH.md)
 * [First full-year engineering test](Doc/CNDV_FIRST_YEAR_TEST_REPORT_ZH.md)
 * [Two-year restart and PFT comparison test](Doc/CNDV_TWO_YEAR_TEST_REPORT_ZH.md)
+* [Strict RegCM4.7/RegCM5 shared-input comparison](Testing/CNDV/strict_regcm47_regcm5_1990_1992/STRICT_COMPARISON_REPORT_ZH.md)
